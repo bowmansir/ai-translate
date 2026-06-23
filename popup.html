@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI 翻译</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body class="popup-page">
+    <main class="popup-shell">
+      <header class="popup-header">
+        <div>
+          <div class="app-name">AI 翻译</div>
+          <div class="status" id="status">ready</div>
+        </div>
+        <div class="shortcut-badge">Alt + Q</div>
+      </header>
+
+      <section class="content-block source-block">
+        <div class="label">原文</div>
+        <div class="source popup-source" id="source">等待划词</div>
+      </section>
+
+      <section class="content-block result">
+        <div class="label">译文</div>
+        <div class="target popup-target" id="target">翻译结果会显示在这里。</div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

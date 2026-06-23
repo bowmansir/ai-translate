@@ -1,0 +1,30 @@
+[package]
+name = "light-translate"
+version = "0.1.0"
+description = "A lightweight desktop translation app"
+authors = ["Codex"]
+edition = "2021"
+build = "build.rs"
+
+[lib]
+name = "light_translate_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+device_query = "2"
+enigo = "0.1"
+keyring = "3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tokio = { version = "1", features = ["time"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }

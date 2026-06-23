@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Frontend build
+dist/
+
+# Rust / Tauri build
+src-tauri/target/
+
+# Local runtime and tool state
+.codex-run/
+.playwright-mcp/
+work/
+outputs/
+
+# Logs
+*.log
+src-tauri/window-debug.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+

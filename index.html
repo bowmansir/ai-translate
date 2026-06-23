@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI 翻译</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #080d13;
+        color: #f6f8fb;
+        font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      }
+
+      body:not(.app-ready) .app-frame {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      body.app-ready .boot-screen {
+        display: none;
+      }
+
+      .boot-screen {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 18% 18%, rgba(37, 199, 182, 0.14), transparent 34%),
+          linear-gradient(135deg, #080d13 0%, #0d1722 100%);
+      }
+
+      .boot-card {
+        display: grid;
+        gap: 14px;
+        justify-items: center;
+        color: #d8e0ea;
+      }
+
+      .boot-mark {
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: #25c7b6;
+        color: #071015;
+        font-weight: 800;
+        font-size: 24px;
+      }
+
+      .boot-title {
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .boot-subtitle {
+        font-size: 13px;
+        color: #92a0b3;
+      }
+
+      .boot-spinner {
+        width: 24px;
+        height: 24px;
+        border: 2px solid rgba(216, 224, 234, 0.22);
+        border-top-color: #25c7b6;
+        border-radius: 999px;
+        animation: boot-spin 0.8s linear infinite;
+      }
+
+      @keyframes boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="boot-screen" aria-label="正在启动">
+      <div class="boot-card">
+        <div class="boot-mark">AI</div>
+        <div class="boot-title">AI 翻译</div>
+        <div class="boot-subtitle">正在启动桌面翻译服务...</div>
+        <div class="boot-spinner"></div>
+      </div>
+    </div>
+    <main class="app-frame">
+      <header class="window-bar" data-tauri-drag-region>
+        <div class="window-title" data-tauri-drag-region></div>
+        <div class="window-actions">
+          <button class="window-button" data-window-action="minimize" type="button" aria-label="最小化">−</button>
+          <button class="window-button" data-window-action="toggleMaximize" type="button" aria-label="最大化">□</button>
+          <button class="window-button close" data-window-action="close" type="button" aria-label="关闭">×</button>
+        </div>
+      </header>
+
+      <section class="shell">
+        <aside class="rail">
+          <div class="brand">
+            <span class="brand-ai">AI</span>
+            <span class="brand-title">AI 翻译</span>
+          </div>
+
+          <nav class="nav" aria-label="Workspace">
+            <button class="nav-item active" data-nav-action="translate" type="button">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M5 5h9" />
+                  <path d="M5 9h5" />
+                  <path d="M14 5v7" />
+                  <path d="M18 8c0 5.5-4.5 10-10 10" />
+                  <path d="M9 14l-3 4" />
+                  <path d="M6 14l3 4" />
+                </svg>
+              </span>
+              <span>翻译</span>
+            </button>
+            <button class="nav-item" data-nav-action="provider" type="button">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="6.5" cy="12" r="2.5" />
+                  <circle cx="17.5" cy="6.5" r="2.5" />
+                  <circle cx="17.5" cy="17.5" r="2.5" />
+                  <path d="M8.8 10.9 15.2 7.6" />
+                  <path d="M8.8 13.1 15.2 16.4" />
+                </svg>
+              </span>
+              <span>翻译服务</span>
+            </button>
+            <button class="nav-item" data-nav-action="settings" type="button">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Z" />
+                  <path d="M19 12a7.3 7.3 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a7.2 7.2 0 0 0-1.7-1L14.5 3h-5l-.4 3.1a7.2 7.2 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.5a7.3 7.3 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7.2 7.2 0 0 0 1.7 1l.4 3.1h5l.4-3.1a7.2 7.2 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5c.1-.3.1-.7.1-1Z" />
+                </svg>
+              </span>
+              <span>设置</span>
+            </button>
+          </nav>
+
+          <section class="system-panel" aria-label="运行状态">
+            <div class="meta-row">
+              <span>快捷键</span>
+              <strong id="shortcut">Alt+Q</strong>
+            </div>
+            <div class="meta-row">
+              <span>服务</span>
+              <strong id="provider">MyMemory</strong>
+            </div>
+            <div class="meta-row">
+              <span>AI API</span>
+              <strong id="ai-status">未配置</strong>
+            </div>
+            <label class="switch-row">
+              <span>开机自启</span>
+              <input id="autostart" type="checkbox" />
+            </label>
+          </section>
+
+          <div class="rail-tools">
+            <button class="rail-tool" type="button" title="帮助">?</button>
+            <button class="rail-tool" type="button" title="关于">i</button>
+          </div>
+        </aside>
+
+        <section class="workspace">
+          <header class="topbar">
+            <div class="language-bar" data-view-section="translate">
+              <label class="select-shell">
+                <span class="sr-only">源语言</span>
+                <select id="source-lang">
+                  <option value="auto">自动识别</option>
+                  <option value="en">英语</option>
+                  <option value="zh-CN">中文</option>
+                  <option value="ja">日语</option>
+                  <option value="ko">韩语</option>
+                </select>
+              </label>
+              <button class="icon-button" id="swap-lang" type="button" title="交换语言">⇄</button>
+              <label class="select-shell">
+                <span class="sr-only">目标语言</span>
+                <select id="target-lang">
+                  <option value="zh-CN">中文</option>
+                  <option value="en">英语</option>
+                  <option value="ja">日语</option>
+                  <option value="ko">韩语</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="service-bar" data-view-section="translate">
+              <label class="select-shell provider-select">
+                <span class="sr-only">翻译服务</span>
+                <select id="active-provider"></select>
+              </label>
+              <button class="settings-button" id="configure-ai" type="button" title="配置服务">⚙</button>
+              <button class="ghost-button hidden-control" id="refresh" type="button">刷新</button>
+              <span class="service-state" id="provider-ai-state">未配置</span>
+            </div>
+
+            <div class="status-pill" id="status">ready</div>
+            <div class="visually-hidden">
+              <h1 id="view-title">翻译</h1>
+              <p id="view-subtitle">输入或粘贴文本自动翻译。</p>
+            </div>
+          </header>
+
+          <section class="editor-grid" data-view-section="translate">
+            <section class="editor-pane">
+              <header class="pane-head">
+                <span>原文</span>
+                <button class="text-button" id="clear-input" type="button">清空</button>
+              </header>
+              <textarea id="manual-input" class="input-area" spellcheck="false" maxlength="5000" placeholder="输入或粘贴文本..."></textarea>
+              <footer class="pane-foot">
+                <span id="input-count">0 / 5000</span>
+                <button class="auto-state" id="auto-translate-toggle" type="button">● 自动翻译已开启</button>
+              </footer>
+            </section>
+
+            <section class="editor-pane output-pane">
+              <header class="pane-head">
+                <span>译文</span>
+                <button class="text-button" id="copy-target" type="button">复制</button>
+              </header>
+              <div class="output-area" id="target">等待翻译</div>
+              <footer class="pane-foot">
+                <span id="language-result">等待翻译</span>
+              </footer>
+            </section>
+          </section>
+
+          <section class="selection-panel view-card" data-view-section="selection" hidden>
+            <div>
+              <strong>划词翻译</strong>
+              <p>选中任意应用内的文本，按全局快捷键后会自动复制、读取剪贴板，并在鼠标附近打开悬浮译文窗。</p>
+            </div>
+            <div class="action-row">
+              <button class="primary-button" id="simulate-selection-view" type="button">测试悬浮窗</button>
+              <span>当前快捷键：<strong id="selection-shortcut">Alt+Q</strong></span>
+            </div>
+          </section>
+
+          <section class="ai-config" id="ai-config" data-view-section="provider translate" hidden>
+            <header class="pane-head">
+              <span>翻译服务配置</span>
+              <button class="text-button" id="close-ai" type="button">关闭</button>
+            </header>
+            <div class="provider-simple">
+              <label>
+                <span>服务</span>
+                <select id="config-provider"></select>
+              </label>
+              <label>
+                <span>API Key</span>
+                <input id="ai-key" type="password" placeholder="DeepSeek 只需要填写 API Key" />
+              </label>
+              <label class="custom-provider-field" hidden>
+                <span>名称</span>
+                <input id="provider-name-input" type="text" placeholder="例如 OpenAI / 火山 / 通义" />
+              </label>
+              <label class="custom-provider-field" hidden>
+                <span>Base URL</span>
+                <input id="ai-base-url" type="text" placeholder="https://api.example.com/v1" />
+              </label>
+              <label class="custom-provider-field" hidden>
+                <span>Model</span>
+                <input id="ai-model" type="text" placeholder="例如 gpt-4.1-mini" />
+              </label>
+              <input id="provider-protocol" type="hidden" />
+              <textarea id="provider-agent" class="hidden-control" spellcheck="false"></textarea>
+            </div>
+            <footer class="pane-foot">
+              <span id="provider-config-note">DeepSeek 使用官方 OpenAI 兼容接口，模型和 Agent 已内置。API Key 保存到系统凭据。</span>
+              <button class="primary-button" id="save-ai-config" type="button">保存并使用</button>
+            </footer>
+          </section>
+
+          <section class="settings-panel view-card" data-view-section="settings" hidden>
+            <div class="page-headline">
+              <strong>应用设置</strong>
+              <span>控制全局划词、启动行为和系统自启。</span>
+            </div>
+            <div class="settings-form">
+              <label>
+                <span>划词翻译快捷键</span>
+                <input id="settings-shortcut" type="text" value="Alt+Q" placeholder="例如 Ctrl+Shift+K" spellcheck="false" />
+              </label>
+              <label>
+                <span>打开主界面快捷键</span>
+                <input id="settings-main-shortcut" type="text" value="Ctrl+D" placeholder="例如 Ctrl+D" spellcheck="false" />
+              </label>
+              <label>
+                <span>窗口启动</span>
+                <select id="settings-startup-mode">
+                  <option value="main">启动后打开主界面</option>
+                  <option value="tray">启动后仅驻留托盘</option>
+                </select>
+              </label>
+              <label class="settings-toggle">
+                <span>开机自启</span>
+                <input id="settings-autostart-toggle" type="checkbox" />
+              </label>
+              <label>
+                <span>主题</span>
+                <select id="settings-theme">
+                  <option value="dark">深色</option>
+                  <option value="compact">紧凑深色</option>
+                  <option value="light">浅色</option>
+                </select>
+              </label>
+            </div>
+            <footer class="pane-foot">
+              <span id="settings-note">快捷键修改立即生效；启动方式将在下次启动时使用。</span>
+              <button class="primary-button" id="save-settings" type="button">保存设置</button>
+            </footer>
+          </section>
+
+          <footer class="action-dock" data-view-section="translate">
+            <button class="primary-button main-action" id="translate" type="button">立即翻译</button>
+            <button class="ghost-button secondary-action" id="simulate" type="button">↗ 划词翻译测试</button>
+          </footer>
+        </section>
+      </section>
+    </main>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
