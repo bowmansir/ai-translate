@@ -63,6 +63,17 @@
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
     "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "installer/nsis-header.bmp",
+        "sidebarImage": "installer/nsis-sidebar.bmp",
+        "installMode": "currentUser",
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": false,
+        "compression": "lzma",
+        "startMenuFolder": "AI 翻译"
+      },
       "wix": {
         "language": "zh-CN"
       }
