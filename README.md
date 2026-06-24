@@ -8,7 +8,7 @@ AI 翻译是一款基于 Tauri v2 的轻量桌面翻译工具。应用采用 Rus
 
 Windows 安装包：
 
-[AI-Translate-0.1.0-x64-setup.exe](release/AI-Translate-0.1.0-x64-setup.exe)
+[AI-Translate-1.0.1-x64-setup.exe](release/AI-Translate-1.0.1-x64-setup.exe)
 
 ## 功能概览
 

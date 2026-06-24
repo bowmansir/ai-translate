@@ -101,7 +101,7 @@ const MODIFIER_LABELS = [
 const viewCopy = {
   translate: {
     title: '翻译工作台',
-    subtitle: '输入或粘贴文本会自动翻译；在任意应用选中文字后按 Alt + Q 使用划词悬浮窗。',
+    subtitle: '输入或粘贴文本会自动翻译；在任意应用选中文字后按 Alt + D 使用划词悬浮窗。',
   },
   selection: {
     title: '划词翻译',
@@ -217,10 +217,12 @@ function enhanceCustomSelects() {
   document.querySelectorAll('select').forEach(enhanceCustomSelect)
 }
 
-function applyTheme(theme) {
+function applyTheme(theme, options = {}) {
   const nextTheme = ['dark', 'compact', 'light'].includes(theme) ? theme : 'dark'
   document.documentElement.dataset.theme = nextTheme
-  window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme)
+  if (options.persist !== false) {
+    window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme)
+  }
   if (settingsThemeInput) settingsThemeInput.value = nextTheme
   refreshCustomSelect(settingsThemeInput)
 }
@@ -505,8 +507,11 @@ function loadProviderIntoForm(providerId = providerState.active_provider_id) {
   if (providerAgentInput) providerAgentInput.value = provider.agent_prompt || ''
   if (aiKeyInput) {
     aiKeyInput.value = ''
-    aiKeyInput.placeholder =
-      provider.id === 'deepseek' ? 'DeepSeek 只需要填写 API Key' : '留空则保留已保存的 API Key'
+    aiKeyInput.placeholder = provider.api_key_configured
+      ? 'API Key 已保存，留空则继续保留'
+      : provider.id === 'deepseek'
+        ? 'DeepSeek 只需要填写 API Key'
+        : '填写该服务的 API Key'
   }
   toggleCustomProviderFields(isCustom)
   refreshCustomSelect(configProviderInput)
@@ -562,7 +567,8 @@ async function refreshStatus() {
   if (settingsShortcutInput) settingsShortcutInput.value = status.shortcut
   if (settingsMainShortcutInput) settingsMainShortcutInput.value = status.main_shortcut || 'Ctrl+D'
   if (settingsStartupModeInput) settingsStartupModeInput.value = status.startup_mode || 'main'
-  if (settingsThemeInput) settingsThemeInput.value = document.documentElement.dataset.theme || 'dark'
+  if (status.theme) applyTheme(status.theme, { persist: false })
+  if (settingsThemeInput) settingsThemeInput.value = status.theme || document.documentElement.dataset.theme || 'dark'
   refreshCustomSelect(settingsStartupModeInput)
   refreshCustomSelect(settingsThemeInput)
   setStatus('ready')
@@ -577,7 +583,7 @@ async function saveRuntimeSettings() {
   }
   let autostartWarning = ''
   try {
-    const shortcut = normalizeShortcutInput(settingsShortcutInput?.value || 'Alt+Q')
+    const shortcut = normalizeShortcutInput(settingsShortcutInput?.value || 'Alt+D')
     const mainShortcut = normalizeShortcutInput(settingsMainShortcutInput?.value || 'Ctrl+D')
     if (settingsShortcutInput) settingsShortcutInput.value = shortcut
     if (settingsMainShortcutInput) settingsMainShortcutInput.value = mainShortcut
@@ -585,12 +591,15 @@ async function saveRuntimeSettings() {
       shortcut,
       main_shortcut: mainShortcut,
       startup_mode: settingsStartupModeInput?.value || 'main',
+      theme: settingsThemeInput?.value || 'dark',
     }
     const saved = await invokeCommand('set_runtime_settings', { settings })
     if (settingsShortcutInput) settingsShortcutInput.value = saved.shortcut
     if (settingsMainShortcutInput) settingsMainShortcutInput.value = saved.main_shortcut
     if (settingsStartupModeInput) settingsStartupModeInput.value = saved.startup_mode
+    if (settingsThemeInput) settingsThemeInput.value = saved.theme || settingsThemeInput.value
     refreshCustomSelect(settingsStartupModeInput)
+    refreshCustomSelect(settingsThemeInput)
 
     if (settingsAutostartToggle) {
       try {
@@ -634,25 +643,7 @@ async function saveRuntimeSettings() {
 }
 
 async function refreshProviderState() {
-  try {
-    providerState = await invokeCommand('get_provider_state')
-  } catch {
-    providerState = {
-      active_provider_id: 'mymemory',
-      providers: [
-        {
-          id: 'mymemory',
-          name: 'MyMemory 公共接口',
-          protocol: 'mymemory',
-          base_url: '',
-          model: '',
-          agent_prompt: '',
-          api_key_configured: false,
-        },
-      ],
-    }
-  }
-
+  providerState = await invokeCommand('get_provider_state')
   updateProviderView()
   loadProviderIntoForm(providerState.active_provider_id)
 }
@@ -808,11 +799,11 @@ async function translateManual(options = {}) {
 async function simulateSelection() {
   setStatus('translating...')
   try {
-    const payload = await invokeCommand('simulate_translation')
-    render(payload)
+    await invokeCommand('simulate_translation')
+    setStatus('selection popup opened')
   } catch (error) {
     setStatus('request failed')
-    if (targetEl) targetEl.textContent = String(error)
+    showToast(String(error), 'error')
   }
 }
 
@@ -859,6 +850,7 @@ function activateNav(action, options = {}) {
 }
 
 listenCommand('translation-ready', (event) => {
+  if (!isPopupPage && event.payload?.surface === 'popup') return
   render(event.payload)
 }).catch(() => setStatus('runtime unavailable'))
 
@@ -1075,14 +1067,26 @@ document.addEventListener('keydown', (event) => {
 enhanceCustomSelects()
 applyTheme(window.localStorage.getItem(THEME_STORAGE_KEY) || 'dark')
 
+async function bootstrapMainWindow() {
+  try {
+    await refreshStatus()
+    await refreshProviderState()
+    updateLangpairMeta()
+    activateNav('translate')
+  } catch (error) {
+    const message = `启动配置读取失败：${String(error)}`
+    setStatus('config load failed')
+    if (targetEl) targetEl.textContent = message
+    showToast(message, 'error')
+  } finally {
+    document.body.classList.add('app-ready')
+  }
+}
+
 if (isPopupPage) {
   refreshPopupPayload()
   window.setInterval(refreshPopupPayload, 250)
+  document.body.classList.add('app-ready')
 } else {
-  refreshStatus().catch(() => setStatus('ready'))
-  refreshProviderState()
-  updateLangpairMeta()
-  activateNav('translate')
+  bootstrapMainWindow()
 }
-
-document.body.classList.add('app-ready')

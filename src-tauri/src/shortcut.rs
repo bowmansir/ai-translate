@@ -1,9 +1,15 @@
-use std::{thread, time::Duration};
+use std::{
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use device_query::{DeviceQuery, DeviceState};
 use enigo::{Enigo, Key, KeyboardControllable};
 use serde_json::json;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Position, State};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, Position, State, WebviewUrl,
+    WebviewWindowBuilder,
+};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -16,22 +22,23 @@ pub fn register_global_shortcut(app: &tauri::App) -> anyhow::Result<()> {
     app.handle().plugin(
         tauri_plugin_global_shortcut::Builder::new()
             .with_handler(move |app, pressed_shortcut, event| {
-                if event.state() == ShortcutState::Released
-                    && is_show_main_shortcut(app, pressed_shortcut)
-                {
-                    show_main_window(app);
+                if event.state() != ShortcutState::Pressed {
                     return;
                 }
 
-                if event.state() == ShortcutState::Pressed
-                    && is_active_shortcut(app, pressed_shortcut)
-                {
+                if is_active_shortcut(app, pressed_shortcut) {
                     let app = app.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(err) = handle_translate_shortcut(app).await {
-                            eprintln!("translate shortcut failed: {err:?}");
+                        if let Err(_err) = handle_translate_shortcut(app).await {
+                            #[cfg(debug_assertions)]
+                            eprintln!("translate shortcut failed: {_err:?}");
                         }
                     });
+                    return;
+                }
+
+                if is_show_main_shortcut(app, pressed_shortcut) {
+                    show_main_window(app);
                 }
             })
             .build(),
@@ -52,6 +59,7 @@ pub fn register_active_shortcut(app: &AppHandle) -> anyhow::Result<()> {
     if shortcut != main_shortcut {
         app.global_shortcut().register(main_shortcut)?;
     }
+
     Ok(())
 }
 
@@ -161,8 +169,7 @@ fn is_active_shortcut(app: &AppHandle, pressed_shortcut: &Shortcut) -> bool {
 fn is_show_main_shortcut(app: &AppHandle, pressed_shortcut: &Shortcut) -> bool {
     let state: State<'_, AppState> = app.state();
     let settings = state.settings();
-    parse_user_shortcut(&settings.main_shortcut)
-        .is_ok_and(|shortcut| pressed_shortcut == &shortcut)
+    parse_user_shortcut(&settings.main_shortcut).is_ok_and(|shortcut| pressed_shortcut == &shortcut)
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -171,6 +178,25 @@ fn show_main_window(app: &AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+fn ensure_popup_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
+    if let Some(window) = app.get_webview_window("popup") {
+        return Ok(window);
+    }
+
+    WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("popup.html".into()))
+        .title("AI 翻译")
+        .inner_size(520.0, 360.0)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(false)
+        .focusable(true)
+        .shadow(false)
+        .build()
 }
 
 fn release_active_shortcut_keys(app: &AppHandle) {
@@ -204,18 +230,12 @@ pub async fn trigger_from_selection(
         anyhow::bail!("debounced");
     }
 
-    release_active_shortcut_keys(&app);
-    tokio::time::sleep(Duration::from_millis(70)).await;
-    let _ = app.clipboard().write_text(String::new());
-    tokio::time::sleep(Duration::from_millis(30)).await;
-    simulate_copy();
-
-    let clipboard_text = read_clipboard_text_with_retry(&app).await;
+    let clipboard_text = copy_selected_text(&app).await;
     let text = clipboard_text.trim();
     if text.is_empty() {
         show_popup_error(
             &app,
-            "未读取到选中文本。请确认当前应用允许复制，并已选中文字后再按快捷键。".to_string(),
+            "未读取到选中文本。Alt+D 在浏览器中可能会先聚焦地址栏；请确认文字仍被选中，或在设置中改用不冲突的快捷键。".to_string(),
         )?;
         anyhow::bail!("selected text is empty");
     }
@@ -234,11 +254,11 @@ async fn handle_translate_shortcut(app: AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn read_clipboard_text_with_retry(app: &AppHandle) -> String {
-    for _ in 0..12 {
-        tokio::time::sleep(Duration::from_millis(50)).await;
+async fn read_clipboard_text_with_retry(app: &AppHandle, sentinel: &str) -> String {
+    for _ in 0..20 {
+        tokio::time::sleep(Duration::from_millis(45)).await;
         let clipboard_text = app.clipboard().read_text().unwrap_or_default();
-        if !clipboard_text.trim().is_empty() {
+        if !clipboard_text.trim().is_empty() && clipboard_text != sentinel {
             return clipboard_text;
         }
     }
@@ -246,37 +266,71 @@ async fn read_clipboard_text_with_retry(app: &AppHandle) -> String {
     String::new()
 }
 
+async fn copy_selected_text(app: &AppHandle) -> String {
+    let previous_clipboard = app.clipboard().read_text().unwrap_or_default();
+    let sentinel = format!(
+        "__AI_TRANSLATE_COPY_SENTINEL_{}__",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default()
+    );
+
+    release_active_shortcut_keys(app);
+    tokio::time::sleep(Duration::from_millis(120)).await;
+
+    for attempt in 0..3 {
+        let _ = app.clipboard().write_text(sentinel.clone());
+        tokio::time::sleep(Duration::from_millis(35 + attempt * 40)).await;
+        simulate_copy();
+
+        let clipboard_text = read_clipboard_text_with_retry(app, &sentinel).await;
+        if !clipboard_text.trim().is_empty() {
+            return clipboard_text;
+        }
+
+        tokio::time::sleep(Duration::from_millis(120)).await;
+    }
+
+    let _ = app.clipboard().write_text(previous_clipboard);
+    String::new()
+}
+
 fn show_popup_error(app: &AppHandle, message: String) -> anyhow::Result<()> {
     let mouse = current_mouse_position();
+    let shortcut = app.state::<AppState>().settings().shortcut;
     let popup_payload = json!({
+        "surface": "popup",
         "source": "",
         "target": message,
         "latency": 0,
         "provider": "selection",
+        "shortcut": shortcut,
         "source_lang": "auto",
         "target_lang": "zh-CN",
     });
     app.state::<AppState>().set_popup_payload(popup_payload);
-    if let Some(window) = app.get_webview_window("popup") {
-        window.set_position(Position::Physical(PhysicalPosition {
-            x: mouse.0,
-            y: mouse.1 + POPUP_OFFSET_Y,
-        }))?;
-        window.show()?;
-        window.set_focus()?;
-        thread::sleep(Duration::from_millis(60));
-        window.emit(
-            "translation-ready",
-            json!({
-                "source": "",
-                "target": message,
-                "latency": 0,
-                "provider": "selection",
-                "source_lang": "auto",
-                "target_lang": "zh-CN",
-            }),
-        )?;
-    }
+    let window = ensure_popup_window(app)?;
+    window.set_position(Position::Physical(PhysicalPosition {
+        x: mouse.0,
+        y: mouse.1 + POPUP_OFFSET_Y,
+    }))?;
+    window.show()?;
+    window.set_focus()?;
+    thread::sleep(Duration::from_millis(60));
+    window.emit(
+        "translation-ready",
+        json!({
+            "surface": "popup",
+            "source": "",
+            "target": message,
+            "latency": 0,
+            "provider": "selection",
+            "shortcut": app.state::<AppState>().settings().shortcut,
+            "source_lang": "auto",
+            "target_lang": "zh-CN",
+        }),
+    )?;
 
     Ok(())
 }
@@ -289,6 +343,7 @@ async fn show_translation_near_mouse(
     let state: State<'_, AppState> = app.state();
     let provider_config = state.provider_config();
     state.set_popup_payload(json!({
+        "surface": "popup",
         "source": source.clone(),
         "target": "翻译中...",
         "latency": 0,
@@ -298,26 +353,26 @@ async fn show_translation_near_mouse(
         "target_lang": "zh-CN",
     }));
 
-    if let Some(window) = app.get_webview_window("popup") {
-        window.set_position(Position::Physical(PhysicalPosition {
-            x: mouse.0,
-            y: mouse.1 + POPUP_OFFSET_Y,
-        }))?;
-        window.show()?;
-        window.set_focus()?;
-        tokio::time::sleep(Duration::from_millis(60)).await;
-        window.emit(
-            "translation-ready",
-            json!({
-                "source": source.clone(),
-                "target": "翻译中...",
-                "latency": 0,
-                "provider": provider_config.name,
-                "source_lang": "auto",
-                "target_lang": "zh-CN",
-            }),
-        )?;
-    }
+    let window = ensure_popup_window(&app)?;
+    window.set_position(Position::Physical(PhysicalPosition {
+        x: mouse.0,
+        y: mouse.1 + POPUP_OFFSET_Y,
+    }))?;
+    window.show()?;
+    window.set_focus()?;
+    tokio::time::sleep(Duration::from_millis(60)).await;
+    window.emit(
+        "translation-ready",
+        json!({
+            "surface": "popup",
+            "source": source.clone(),
+            "target": "翻译中...",
+            "latency": 0,
+            "provider": provider_config.name,
+            "source_lang": "auto",
+            "target_lang": "zh-CN",
+        }),
+    )?;
 
     let payload = match translation::translate_text_with_provider(
         source,
@@ -330,25 +385,37 @@ async fn show_translation_near_mouse(
         Ok(payload) => payload,
         Err(err) => {
             let error_payload = json!({
+                "surface": "popup",
                 "source": "",
                 "target": err.to_string(),
                 "latency": 0,
                 "provider": provider_config.name,
+                "shortcut": state.settings().shortcut,
                 "source_lang": "auto",
                 "target_lang": "zh-CN",
             });
-            app.state::<AppState>().set_popup_payload(error_payload.clone());
-            if let Some(window) = app.get_webview_window("popup") {
-                window.emit("translation-ready", error_payload.clone())?;
-            }
+            app.state::<AppState>()
+                .set_popup_payload(error_payload.clone());
+            let window = ensure_popup_window(&app)?;
+            window.emit("translation-ready", error_payload.clone())?;
             return Err(err);
         }
     };
 
-    if let Some(window) = app.get_webview_window("popup") {
-        app.state::<AppState>().set_popup_payload(json!(payload.clone()));
-        window.emit("translation-ready", payload.clone())?;
-    }
+    let window = ensure_popup_window(&app)?;
+    let popup_payload = json!({
+        "surface": "popup",
+        "source": payload.source.clone(),
+        "target": payload.target.clone(),
+        "latency": payload.latency,
+        "provider": payload.provider.clone(),
+        "shortcut": state.settings().shortcut,
+        "source_lang": payload.source_lang.clone(),
+        "target_lang": payload.target_lang.clone(),
+    });
+    app.state::<AppState>()
+        .set_popup_payload(popup_payload.clone());
+    window.emit("translation-ready", popup_payload)?;
 
     Ok(payload)
 }

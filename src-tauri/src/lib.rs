@@ -18,6 +18,7 @@ struct AppStatus {
     shortcut: String,
     main_shortcut: String,
     startup_mode: String,
+    theme: String,
     provider: String,
     ai_configured: bool,
 }
@@ -71,7 +72,7 @@ fn window_action(app: tauri::AppHandle, action: String) -> Result<(), String> {
                 window.maximize()
             }
         }
-        "close" => window.close(),
+        "close" => window.hide(),
         _ => return Err("unsupported window action".to_string()),
     }
     .map_err(|err| err.to_string())
@@ -79,26 +80,25 @@ fn window_action(app: tauri::AppHandle, action: String) -> Result<(), String> {
 
 #[tauri::command]
 fn get_app_status(app: tauri::AppHandle) -> Result<AppStatus, String> {
-    let autostart_enabled = app
-        .autolaunch()
-        .is_enabled()
-        .unwrap_or(false);
+    let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
 
     let state = app.state::<AppState>();
     let provider_config = state.provider_config();
     let settings = state.settings();
 
-    Ok(AppStatus {
+    let status = AppStatus {
         autostart_enabled,
         shortcut: settings.shortcut,
         main_shortcut: settings.main_shortcut,
         startup_mode: settings.startup_mode,
+        theme: settings.theme,
         provider: provider_config.name,
         ai_configured: provider_config
             .api_key
             .as_ref()
             .is_some_and(|key| !key.trim().is_empty()),
-    })
+    };
+    Ok(status)
 }
 
 #[tauri::command]
@@ -117,7 +117,8 @@ fn set_runtime_settings(
     app_state: tauri::State<'_, AppState>,
     mut settings: RuntimeSettings,
 ) -> Result<RuntimeSettings, String> {
-    settings.shortcut = shortcut::normalize_shortcut(&settings.shortcut).map_err(|err| err.to_string())?;
+    settings.shortcut =
+        shortcut::normalize_shortcut(&settings.shortcut).map_err(|err| err.to_string())?;
     settings.main_shortcut =
         shortcut::normalize_shortcut(&settings.main_shortcut).map_err(|err| err.to_string())?;
     let saved = app_state
@@ -215,7 +216,7 @@ pub fn run() {
                 shortcut::register_global_shortcut(app)?;
                 create_tray(app)?;
                 let settings = app.state::<AppState>().settings();
-                ensure_main_window(app, settings.startup_mode == "main")?;
+                ensure_main_window(app.handle(), settings.startup_mode == "main")?;
             }
 
             Ok(())
@@ -231,7 +232,7 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-fn ensure_main_window(app: &tauri::App, show: bool) -> tauri::Result<()> {
+fn ensure_main_window(app: &tauri::AppHandle, show: bool) -> tauri::Result<()> {
     let window = if let Some(window) = app.get_webview_window("main") {
         window
     } else {
@@ -257,13 +258,7 @@ fn ensure_main_window(app: &tauri::App, show: bool) -> tauri::Result<()> {
 }
 
 fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
-    if let Some(window) = app.get_webview_window("main") {
-        window.show()?;
-        window.unminimize()?;
-        window.set_focus()?;
-    }
-
-    Ok(())
+    ensure_main_window(app, true)
 }
 
 fn create_tray(app: &tauri::App) -> tauri::Result<()> {

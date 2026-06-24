@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::HashMap,
-    fs,
+    env, fs,
     path::PathBuf,
     sync::Mutex,
     time::{Duration, Instant},
@@ -70,6 +70,8 @@ pub struct RuntimeSettings {
     #[serde(default = "default_main_shortcut")]
     pub main_shortcut: String,
     pub startup_mode: String,
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 impl Default for RuntimeSettings {
@@ -78,6 +80,7 @@ impl Default for RuntimeSettings {
             shortcut: default_selection_shortcut(),
             main_shortcut: default_main_shortcut(),
             startup_mode: "main".to_string(),
+            theme: default_theme(),
         }
     }
 }
@@ -115,10 +118,22 @@ impl AppState {
     pub fn load_from_disk(&self, app: &AppHandle) -> anyhow::Result<()> {
         let path = config_file_path(app)?;
         if !path.exists() {
+            if let Some(legacy_path) = legacy_config_file_path(app) {
+                if legacy_path.exists() {
+                    return self.load_config_from_path(app, legacy_path);
+                }
+            }
+
             self.hydrate_provider_keys(app);
+            let _ = self.persist_loaded_provider_keys(app);
+            self.save_to_disk(app)?;
             return Ok(());
         }
 
+        self.load_config_from_path(app, path)
+    }
+
+    fn load_config_from_path(&self, app: &AppHandle, path: PathBuf) -> anyhow::Result<()> {
         let config: PersistedAppConfig = serde_json::from_str(&fs::read_to_string(path)?)?;
         let mut providers = default_providers();
         for persisted in config.providers {
@@ -148,6 +163,10 @@ impl AppState {
             .expect("active provider mutex poisoned") = active_provider_id;
         let settings = migrate_runtime_settings(config.settings);
         *self.settings.lock().expect("settings mutex poisoned") = settings;
+        let _ = persist_provider_keys(
+            app,
+            &self.providers.lock().expect("providers mutex poisoned"),
+        );
         self.save_to_disk(app)?;
 
         Ok(())
@@ -286,6 +305,9 @@ impl AppState {
         if !matches!(settings.startup_mode.as_str(), "main" | "tray") {
             anyhow::bail!("unsupported startup mode");
         }
+        if !matches!(settings.theme.as_str(), "dark" | "compact" | "light") {
+            anyhow::bail!("unsupported theme");
+        }
 
         let mut current = self.settings.lock().expect("settings mutex poisoned");
         *current = settings;
@@ -316,6 +338,11 @@ impl AppState {
         hydrate_provider_keys(app, &mut providers);
     }
 
+    fn persist_loaded_provider_keys(&self, app: &AppHandle) -> anyhow::Result<()> {
+        let providers = self.providers.lock().expect("providers mutex poisoned");
+        persist_provider_keys(app, &providers)
+    }
+
     fn save_to_disk(&self, app: &AppHandle) -> anyhow::Result<()> {
         let path = config_file_path(app)?;
         if let Some(parent) = path.parent() {
@@ -328,11 +355,18 @@ impl AppState {
             .lock()
             .expect("active provider mutex poisoned")
             .clone();
-        let settings = self.settings.lock().expect("settings mutex poisoned").clone();
+        let settings = self
+            .settings
+            .lock()
+            .expect("settings mutex poisoned")
+            .clone();
         let persisted = PersistedAppConfig {
             active_provider_id,
             settings,
-            providers: providers.iter().map(PersistedProviderConfig::from).collect(),
+            providers: providers
+                .iter()
+                .map(PersistedProviderConfig::from)
+                .collect(),
         };
 
         fs::write(path, serde_json::to_string_pretty(&persisted)?)?;
@@ -415,11 +449,33 @@ fn provider_view(config: &ProviderConfig) -> ProviderConfigView {
 }
 
 fn config_file_path(app: &AppHandle) -> anyhow::Result<PathBuf> {
-    Ok(app.path().app_config_dir()?.join("config.json"))
+    Ok(stable_config_dir(app)?.join("config.json"))
+}
+
+fn legacy_config_file_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|path| path.join("config.json"))
 }
 
 fn secrets_file_path(app: &AppHandle) -> anyhow::Result<PathBuf> {
-    Ok(app.path().app_config_dir()?.join("secrets.json"))
+    Ok(stable_config_dir(app)?.join("secrets.json"))
+}
+
+fn legacy_secrets_file_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|path| path.join("secrets.json"))
+}
+
+fn stable_config_dir(app: &AppHandle) -> anyhow::Result<PathBuf> {
+    if let Some(appdata) = env::var_os("APPDATA") {
+        return Ok(PathBuf::from(appdata).join("AI Translate"));
+    }
+
+    Ok(app.path().app_config_dir()?)
 }
 
 fn provider_key_account(provider_id: &str) -> String {
@@ -451,6 +507,25 @@ fn hydrate_provider_keys(app: &AppHandle, providers: &mut [ProviderConfig]) {
     }
 }
 
+fn persist_provider_keys(app: &AppHandle, providers: &[ProviderConfig]) -> anyhow::Result<()> {
+    for provider in providers {
+        if provider.protocol == "mymemory" {
+            continue;
+        }
+
+        if let Some(api_key) = provider
+            .api_key
+            .as_ref()
+            .map(|key| key.trim())
+            .filter(|key| !key.is_empty())
+        {
+            store_encrypted_provider_key(app, &provider.id, api_key)?;
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Default, Serialize, Deserialize)]
 struct PersistedSecrets {
     api_keys: HashMap<String, String>,
@@ -476,8 +551,15 @@ fn store_encrypted_provider_key(
 
 fn load_encrypted_provider_key(app: &AppHandle, provider_id: &str) -> Option<String> {
     let path = secrets_file_path(app).ok()?;
-    let secrets = read_persisted_secrets(&path);
-    secrets
+    load_encrypted_provider_key_from_path(&path, provider_id).or_else(|| {
+        legacy_secrets_file_path(app)
+            .as_ref()
+            .and_then(|path| load_encrypted_provider_key_from_path(path, provider_id))
+    })
+}
+
+fn load_encrypted_provider_key_from_path(path: &PathBuf, provider_id: &str) -> Option<String> {
+    read_persisted_secrets(path)
         .api_keys
         .get(provider_id)
         .and_then(|encrypted| unprotect_secret(encrypted).ok())
@@ -641,19 +723,27 @@ pub fn default_agent_prompt() -> String {
 }
 
 fn default_selection_shortcut() -> String {
-    "Alt+Q".to_string()
+    "Alt+D".to_string()
 }
 
 fn default_main_shortcut() -> String {
     "Ctrl+D".to_string()
 }
 
+fn default_theme() -> String {
+    "dark".to_string()
+}
+
 fn migrate_runtime_settings(mut settings: RuntimeSettings) -> RuntimeSettings {
-    if settings.shortcut.trim().eq_ignore_ascii_case("Alt+D") {
+    if settings.shortcut.trim().is_empty() || settings.shortcut.trim().eq_ignore_ascii_case("Alt+Q")
+    {
         settings.shortcut = default_selection_shortcut();
     }
     if settings.main_shortcut.trim().is_empty() {
         settings.main_shortcut = default_main_shortcut();
+    }
+    if !matches!(settings.theme.as_str(), "dark" | "compact" | "light") {
+        settings.theme = default_theme();
     }
     settings
 }
