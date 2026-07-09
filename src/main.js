@@ -65,6 +65,8 @@ let isTranslating = false
 let queuedAutoTranslate = false
 let autoTranslateEnabled = true
 let lastTranslatedSignature = ''
+let activeTranslationSignature = ''
+let queuedAutoSignature = ''
 let providerState = { active_provider_id: 'mymemory', providers: [] }
 const customSelects = new WeakMap()
 
@@ -119,6 +121,24 @@ const viewCopy = {
 
 function setStatus(text) {
   if (statusEl) statusEl.textContent = text
+}
+
+function getTranslationSignature(text = manualInput?.value.trim() || '') {
+  const sourceLang = sourceLangEl?.value || 'auto'
+  const targetLang = targetLangEl?.value || 'zh-CN'
+  return `${providerState.active_provider_id}\n${sourceLang}\n${targetLang}\n${text}`
+}
+
+function setTranslationBusy(isBusy, label = '正在翻译...') {
+  document.body.classList.toggle('is-translating', isBusy)
+  if (translateButton) {
+    translateButton.disabled = isBusy
+    translateButton.textContent = isBusy ? '翻译中...' : '立即翻译'
+  }
+  if (targetEl) {
+    targetEl.classList.toggle('loading', isBusy)
+    if (isBusy) targetEl.textContent = label
+  }
 }
 
 function showToast(message, variant = 'success') {
@@ -308,6 +328,12 @@ function render(payload) {
   if (languageResultEl) {
     languageResultEl.textContent = `${payload.source_lang || '-'} -> ${payload.target_lang || '-'}`
   }
+  if (targetEl) targetEl.classList.toggle('loading', Boolean(payload.pending))
+  if (payload.pending) {
+    setStatus('翻译中...')
+    return
+  }
+  setTranslationBusy(false)
   setStatus(payload.latency ? `${payload.latency} ms` : 'translated')
 }
 
@@ -354,6 +380,7 @@ function setAutoTranslateEnabled(enabled) {
   if (!autoTranslateEnabled) {
     cancelAutoTranslate()
     queuedAutoTranslate = false
+    queuedAutoSignature = ''
     setStatus('auto translate off')
     return
   }
@@ -528,6 +555,7 @@ function scheduleAutoTranslate(delay = getAutoTranslateDelay()) {
 
   if (!autoTranslateEnabled) {
     queuedAutoTranslate = false
+    queuedAutoSignature = ''
     setStatus('auto translate off')
     return
   }
@@ -535,6 +563,7 @@ function scheduleAutoTranslate(delay = getAutoTranslateDelay()) {
   const text = manualInput?.value.trim()
   if (!text) {
     queuedAutoTranslate = false
+    queuedAutoSignature = ''
     translationRequestId += 1
     if (targetEl) targetEl.textContent = '输入内容后自动翻译。'
     if (languageResultEl) languageResultEl.textContent = '等待翻译'
@@ -542,10 +571,21 @@ function scheduleAutoTranslate(delay = getAutoTranslateDelay()) {
     return
   }
 
+  const signature = getTranslationSignature(text)
+  if (signature === lastTranslatedSignature) {
+    setStatus('translated')
+    return
+  }
+
   if (isTranslating) {
+    if (signature === activeTranslationSignature || signature === queuedAutoSignature) {
+      setStatus('翻译中...')
+      return
+    }
     queuedAutoTranslate = true
+    queuedAutoSignature = signature
     translationRequestId += 1
-    setStatus('waiting...')
+    setStatus('等待上一条翻译完成...')
     return
   }
 
@@ -751,26 +791,36 @@ async function translateManual(options = {}) {
     return
   }
 
+  const sourceLang = sourceLangEl?.value || 'auto'
+  const targetLang = targetLangEl?.value || 'zh-CN'
+  const signature = getTranslationSignature(text)
+
   if (isTranslating) {
+    if (signature === activeTranslationSignature || signature === queuedAutoSignature) {
+      setStatus('翻译中...')
+      return
+    }
     queuedAutoTranslate = true
+    queuedAutoSignature = signature
     translationRequestId += 1
-    setStatus('waiting...')
+    setStatus('等待上一条翻译完成...')
     return
   }
 
   const requestId = ++translationRequestId
   activeTranslationRequestId = requestId
   isTranslating = true
-  const sourceLang = sourceLangEl?.value || 'auto'
-  const targetLang = targetLangEl?.value || 'zh-CN'
-  const signature = `${providerState.active_provider_id}\n${sourceLang}\n${targetLang}\n${text}`
+  activeTranslationSignature = signature
   if (options.mode === 'auto' && signature === lastTranslatedSignature) {
     setStatus('translated')
     isTranslating = false
     activeTranslationRequestId = 0
+    activeTranslationSignature = ''
     return
   }
-  setStatus(options.mode === 'auto' ? 'auto translating...' : 'translating...')
+  if (signature === queuedAutoSignature) queuedAutoSignature = ''
+  setStatus(options.mode === 'auto' ? '自动翻译中...' : '翻译中...')
+  setTranslationBusy(true, options.mode === 'auto' ? '正在自动翻译...' : '正在翻译...')
   try {
     const payload = await invokeCommand('translate_manual', {
       text,
@@ -783,11 +833,14 @@ async function translateManual(options = {}) {
   } catch (error) {
     if (requestId !== translationRequestId) return
     setStatus('request failed')
+    setTranslationBusy(false)
     if (targetEl) targetEl.textContent = String(error)
   } finally {
     if (activeTranslationRequestId === requestId) {
       isTranslating = false
       activeTranslationRequestId = 0
+      activeTranslationSignature = ''
+      setTranslationBusy(false)
       if (queuedAutoTranslate) {
         queuedAutoTranslate = false
         scheduleAutoTranslate(QUEUED_TRANSLATE_DELAY_MS)
@@ -958,8 +1011,10 @@ if (clearInputButton) {
     cancelAutoTranslate()
     translationRequestId += 1
     queuedAutoTranslate = false
+    queuedAutoSignature = ''
     isTranslating = false
     activeTranslationRequestId = 0
+    activeTranslationSignature = ''
     lastTranslatedSignature = ''
     if (targetEl) targetEl.textContent = '输入内容后自动翻译。'
     if (languageResultEl) languageResultEl.textContent = '等待翻译'
@@ -1080,6 +1135,13 @@ async function bootstrapMainWindow() {
     showToast(message, 'error')
   } finally {
     document.body.classList.add('app-ready')
+    try {
+      const currentWindow = getCurrentWindow()
+      await currentWindow.show()
+      await currentWindow.setFocus()
+    } catch {
+      // The window may already be visible when running outside a packaged desktop window.
+    }
   }
 }
 

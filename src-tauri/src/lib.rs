@@ -233,23 +233,30 @@ pub fn run() {
 }
 
 fn ensure_main_window(app: &tauri::AppHandle, show: bool) -> tauri::Result<()> {
-    let window = if let Some(window) = app.get_webview_window("main") {
-        window
+    if !show && app.get_webview_window("main").is_none() {
+        return Ok(());
+    }
+
+    let (window, created) = if let Some(window) = app.get_webview_window("main") {
+        (window, false)
     } else {
-        WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+        let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
             .title("AI 翻译")
             .inner_size(920.0, 600.0)
             .resizable(true)
             .decorations(false)
             .focusable(true)
-            .visible(show)
-            .build()?
+            .visible(false)
+            .build()?;
+        (window, true)
     };
 
     if show {
-        window.show()?;
         window.unminimize()?;
-        window.set_focus()?;
+        if !created {
+            window.show()?;
+            window.set_focus()?;
+        }
     } else {
         window.hide()?;
     }

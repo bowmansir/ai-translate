@@ -349,6 +349,7 @@ async fn show_translation_near_mouse(
         "latency": 0,
         "provider": provider_config.name,
         "shortcut": state.settings().shortcut,
+        "pending": true,
         "source_lang": "auto",
         "target_lang": "zh-CN",
     }));
@@ -369,6 +370,7 @@ async fn show_translation_near_mouse(
             "target": "翻译中...",
             "latency": 0,
             "provider": provider_config.name,
+            "pending": true,
             "source_lang": "auto",
             "target_lang": "zh-CN",
         }),
