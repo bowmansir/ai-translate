@@ -1,129 +1,87 @@
-# AI 翻译
+# AI 翻译 / AI Translate
 
-AI 翻译是一款基于 Tauri v2 的轻量桌面翻译工具。应用采用 Rust 后端处理全局快捷键、剪贴板、窗口控制、配置持久化和翻译请求，前端只负责极简交互界面，目标是保持低内存占用和快速响应。
+> 轻量、快速、可配置的桌面 AI 翻译工具。<br>
+> A lightweight, fast, and configurable AI-powered desktop translator.
 
 ![AI 翻译主界面](docs/images/main-window.png)
 
-## 下载
+AI 翻译专注于一个清晰目标：让桌面翻译足够快、足够安静、足够顺手。它基于 Tauri v2 构建，使用 Rust 处理全局快捷键、剪贴板、窗口控制、配置持久化与翻译请求，前端只负责极简交互界面。
 
-Windows 安装包：
+AI Translate is built for one focused job: make desktop translation fast, quiet, and effortless. It is powered by Tauri v2, with Rust handling global shortcuts, clipboard access, window control, persistence, and translation requests, while the frontend stays minimal and responsive.
+
+## Highlights / 产品亮点
+
+- **划词即译 / Translate selected text**<br>
+  在任意应用中选中文字，按下 `Alt+D`，翻译结果会在鼠标附近的悬浮窗中出现。<br>
+  Select text in any app, press `Alt+D`, and get the translation in a floating popup near your cursor.
+
+- **输入即译 / Type and translate automatically**<br>
+  主界面支持输入或粘贴文本后自动翻译，也保留手动翻译按钮。<br>
+  The main window translates automatically as you type or paste, with manual translation still available.
+
+- **AI Provider 可配置 / Configurable AI providers**<br>
+  内置 MyMemory 与 DeepSeek，支持添加 OpenAI 兼容服务。DeepSeek 只需要填写 API Key。<br>
+  Ships with MyMemory and DeepSeek, and supports custom OpenAI-compatible providers. DeepSeek only requires an API key.
+
+- **轻量桌面体验 / Lightweight desktop experience**<br>
+  支持托盘驻留、启动后隐藏、单例运行、全局快捷键和无边框窗口。<br>
+  Supports tray mode, hidden startup, single-instance behavior, global shortcuts, and frameless windows.
+
+- **清晰反馈 / Clear request feedback**<br>
+  翻译请求期间会显示 loading 状态，避免用户不知道请求是否已开始。<br>
+  Translation requests show a visible loading state, so users know the app is working.
+
+- **配置持久化 / Persistent settings**<br>
+  快捷键、启动方式、主题和翻译服务会保存到本地；API Key 与普通配置分离保存。<br>
+  Shortcuts, startup behavior, theme, and provider settings are persisted locally; API keys are stored separately from regular config.
+
+## Download / 下载
+
+Windows installer:
 
 [AI-Translate-1.0.1-x64-setup.exe](release/AI-Translate-1.0.1-x64-setup.exe)
 
-## 功能概览
-
-- 主界面翻译：输入或粘贴文本后自动翻译，也可以手动点击翻译。
-- 全局划词翻译：在任意应用选中文字后按快捷键，在鼠标附近弹出悬浮翻译窗。
-- 翻译服务切换：首页可直接选择 MyMemory、DeepSeek 或自定义 OpenAI 兼容服务。
-- AI 服务配置：DeepSeek 只需要填写 API Key，Base URL、模型和 Agent 已内置。
-- 自定义模型：支持添加其他 OpenAI 兼容服务，填写名称、Base URL、Model 和 API Key。
-- 快捷键设置：支持自定义划词翻译快捷键和打开主界面快捷键。
-- 启动方式：支持启动后打开主界面，或启动后仅驻留托盘。
-- 主题切换：支持深色和浅色主题。
-- 译文复制：译文区域提供一键复制。
-- 桌面能力：支持托盘菜单、单例运行、窗口最小化、最大化和关闭。
-
-## 技术架构
-
-```text
-Frontend (Vite + Vanilla JS + CSS)
-  - 主界面输入、自动翻译、防抖、主题和设置交互
-  - 悬浮窗展示划词结果
-
-Tauri Commands
-  - 前端调用 Rust 后端能力
-  - 统一翻译、配置、复制、窗口控制接口
-
-Rust Backend
-  - 全局快捷键监听
-  - 模拟 Ctrl+C 读取选中文本
-  - 获取鼠标位置并移动悬浮窗
-  - 调用 MyMemory / AI Provider 翻译接口
-  - 保存应用配置和加密保存 API Key
-```
-
-## 目录结构
-
-```text
-.
-├── docs/
-│   └── images/                 # README 截图
-├── index.html                  # 主窗口页面
-├── popup.html                  # 划词翻译悬浮窗页面
-├── src/
-│   ├── main.js                 # 前端交互、状态和 Tauri command 调用
-│   └── style.css               # 主界面、悬浮窗和主题样式
-├── src-tauri/
-│   ├── capabilities/           # Tauri 权限配置
-│   ├── icons/                  # 应用和托盘图标
-│   ├── src/
-│   │   ├── app_state.rs        # 配置、Provider 和密钥持久化
-│   │   ├── lib.rs              # Tauri 入口、窗口、托盘和命令
-│   │   ├── main.rs             # 桌面入口
-│   │   ├── shortcut.rs         # 全局快捷键、模拟复制和悬浮窗定位
-│   │   └── translation.rs      # 翻译服务请求
-│   ├── Cargo.toml
-│   └── tauri.conf.json
-├── package.json
-└── pnpm-lock.yaml
-```
-
-## 本地开发
-
-环境要求：
-
-- Node.js 22+
-- pnpm
-- Rust stable
-- Windows WebView2 Runtime
-
-安装依赖：
-
-```powershell
-pnpm install
-```
-
-启动桌面开发版：
-
-```powershell
-pnpm desktop
-```
-
-前端生产构建：
-
-```powershell
-pnpm build
-```
-
-Rust 检查：
-
-```powershell
-cd src-tauri
-cargo check
-cargo clippy --all-targets -- -D warnings
-```
-
-打包 Windows 安装包：
-
-```powershell
-pnpm tauri build
-```
-
-Windows 发布目标当前使用 NSIS，打包产物位于：
+Local build output:
 
 ```text
 src-tauri/target/release/bundle/nsis/
 ```
 
-## 翻译服务
+## Product Flow / 使用流程
+
+### Selection Translation / 划词翻译
+
+1. Select text in any desktop app.<br>
+   在任意桌面应用中选中文字。
+2. Press `Alt+D`.<br>
+   按下 `Alt+D`。
+3. AI Translate copies the selection, reads the clipboard, gets the cursor position, and opens a popup nearby.<br>
+   AI 翻译会模拟复制、读取剪贴板、获取鼠标位置，并在附近打开悬浮窗。
+4. The popup first shows a loading state, then updates with the translation result.<br>
+   悬浮窗先显示翻译中状态，随后更新译文。
+
+### Main Window Translation / 主界面翻译
+
+1. Open the main window with the tray menu or `Ctrl+D`.<br>
+   通过托盘菜单或 `Ctrl+D` 打开主界面。
+2. Paste or type text into the source panel.<br>
+   在原文区域粘贴或输入文本。
+3. Translation starts automatically, or you can click the translate button.<br>
+   应用会自动翻译，也可以点击立即翻译。
+4. Copy the translated text with one click.<br>
+   可一键复制译文。
+
+## Translation Providers / 翻译服务
 
 ### MyMemory
 
-默认公共接口，无需 API Key，适合开箱即用和基础测试。
+中文：默认公共接口，无需 API Key，适合开箱即用和基础测试。<br>
+English: The default public provider. No API key is required, making it suitable for quick testing and out-of-the-box use.
 
 ### DeepSeek
 
-DeepSeek 使用 OpenAI 兼容接口，用户只需要在界面中填写 API Key：
+中文：DeepSeek 使用 OpenAI 兼容接口。界面中只需要填写 API Key，其余配置已内置。<br>
+English: DeepSeek uses an OpenAI-compatible API. Only the API key is required in the UI; the rest is preconfigured.
 
 ```text
 Base URL: https://api.deepseek.com
@@ -131,55 +89,165 @@ Model: deepseek-v4-flash
 Endpoint: /chat/completions
 ```
 
-内置 Agent 约束模型只输出译文，不输出解释、候选项、引用或 Markdown 包裹。
+The built-in translation agent asks the model to return only the translated text, without explanations, alternatives, quotes, or Markdown wrappers.
 
-### 自定义 OpenAI 兼容服务
+内置 Agent 会约束模型只输出译文，不输出解释、候选项、引用或 Markdown 包裹。
 
-可在翻译服务配置中添加自定义服务：
+### Custom OpenAI-Compatible Provider / 自定义 OpenAI 兼容服务
 
-- 名称
+Required fields / 必填项：
+
+- Name / 名称
 - Base URL
 - Model
 - API Key
 
-## 配置与密钥
+## Shortcuts / 快捷键
 
-应用配置保存到系统应用配置目录，例如 Windows：
+Default shortcuts / 默认快捷键：
+
+- Selection translation / 划词翻译：`Alt+D`
+- Show main window / 打开主界面：`Ctrl+D`
+
+Custom shortcut format / 自定义快捷键格式：
 
 ```text
-%APPDATA%/com.codex.lighttranslate/config.json
+Alt/Ctrl/Shift + letter or number
 ```
 
-API Key 不写入普通业务配置：
-
-- 优先保存到系统凭据管理。
-- Windows 下额外写入 DPAPI 加密后的 `secrets.json` 作为兜底。
-- 前端只接收 `api_key_configured` 状态，不读取明文 Key。
-
-## 快捷键
-
-默认快捷键：
-
-- 划词翻译：`Alt+Q`
-- 打开主界面：`Ctrl+D`
-
-快捷键可在设置中自定义，格式为：
+Examples / 示例：
 
 ```text
-Alt/Ctrl/Shift + 字母或数字
-```
-
-示例：
-
-```text
-Alt+Q
+Alt+D
 Ctrl+E
 Shift+Q
 ```
 
-## 发布前检查
+## Settings / 设置能力
 
-发布前建议执行：
+- Startup mode: open main window or stay in tray.<br>
+  启动方式：打开主界面或仅驻留托盘。
+- Theme: dark and light themes.<br>
+  主题：深色和浅色。
+- Provider: switch provider directly from the home screen.<br>
+  翻译服务：首页直接切换。
+- Shortcuts: customize selection translation and main-window shortcuts.<br>
+  快捷键：自定义划词翻译和打开主界面快捷键。
+- Auto translation: can be turned on or off from the source panel.<br>
+  自动翻译：可在原文区域开启或关闭。
+
+## Architecture / 技术架构
+
+```text
+Frontend (Vite + Vanilla JS + CSS)
+  - Main window UI, automatic translation, settings, themes
+  - Popup UI for selection translation
+
+Tauri Commands
+  - Bridge between frontend and Rust backend
+  - Translation, provider, settings, clipboard, and window APIs
+
+Rust Backend
+  - Global shortcut registration
+  - Simulated copy and clipboard reading
+  - Mouse position lookup and popup placement
+  - MyMemory / AI provider HTTP requests
+  - App settings and API key persistence
+```
+
+## Tech Stack / 技术栈
+
+- Tauri v2
+- Rust
+- Vite
+- Vanilla JavaScript
+- CSS
+- NSIS for Windows installer
+
+## Local Development / 本地开发
+
+Requirements / 环境要求：
+
+- Node.js 22+
+- pnpm
+- Rust stable
+- Windows WebView2 Runtime
+
+Install dependencies / 安装依赖：
+
+```powershell
+pnpm install
+```
+
+Run desktop dev build / 启动桌面开发版：
+
+```powershell
+pnpm desktop
+```
+
+Build frontend / 前端生产构建：
+
+```powershell
+pnpm build
+```
+
+Rust checks / Rust 检查：
+
+```powershell
+cd src-tauri
+cargo check
+cargo clippy --all-targets -- -D warnings
+```
+
+Build Windows installer / 打包 Windows 安装包：
+
+```powershell
+pnpm tauri build
+```
+
+## Project Structure / 目录结构
+
+```text
+.
+├── docs/
+│   └── images/                 # README screenshots
+├── index.html                  # Main window
+├── popup.html                  # Selection translation popup
+├── release/                    # Public installer file
+├── scripts/
+│   └── generate_icon.py        # Transparent app icon generator
+├── src/
+│   ├── main.js                 # Frontend state, UI, and Tauri command calls
+│   └── style.css               # Main window, popup, and theme styles
+├── src-tauri/
+│   ├── capabilities/           # Tauri permissions
+│   ├── icons/                  # App and tray icons
+│   ├── src/
+│   │   ├── app_state.rs        # Settings, providers, and secret persistence
+│   │   ├── lib.rs              # Tauri entry, windows, tray, and commands
+│   │   ├── main.rs             # Desktop entry
+│   │   ├── shortcut.rs         # Global shortcuts, copy simulation, popup placement
+│   │   └── translation.rs      # Translation provider requests
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+├── package.json
+└── pnpm-lock.yaml
+```
+
+## Data & Security / 数据与安全
+
+- Regular settings and secrets are stored separately.<br>
+  普通配置与密钥分离存储。
+- API keys are not written into README, source code, logs, or frontend persistent state.<br>
+  API Key 不写入 README、源码、日志或前端持久化状态。
+- The frontend only receives whether an API key is configured.<br>
+  前端只接收 API Key 是否已配置的状态。
+- Translation requests are sent from the Rust backend to avoid browser CORS issues.<br>
+  翻译请求由 Rust 后端发起，避免前端跨域问题。
+- On Windows, API keys are protected with system-level secret storage and DPAPI fallback.<br>
+  在 Windows 上，API Key 使用系统级密钥存储和 DPAPI 兜底保护。
+
+## Release Checklist / 发布检查
 
 ```powershell
 pnpm build
@@ -190,9 +258,7 @@ cd ..
 pnpm tauri build
 ```
 
-## 数据与安全边界
+## License / 许可证
 
-- 普通配置与密钥分离存储。
-- API Key 不进入 README、源码、日志或前端持久化状态。
-- 翻译请求由 Rust 后端发起，避免前端跨域问题。
-- 应用打包产物、依赖目录和本地运行日志均通过 `.gitignore` 排除。
+This project has not declared a license yet.<br>
+本项目暂未声明许可证。
